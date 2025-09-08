@@ -1,4 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
+import { 
+  googleMapsService, 
+  openFDAService, 
+  appointmentService 
+} from '../services'
 
 const DataContext = createContext()
 
@@ -119,13 +124,24 @@ export function DataProvider({ children }) {
   const [programs, setPrograms] = useState([])
   const [appointments, setAppointments] = useState([])
   const [loading, setLoading] = useState(true)
+  const [userLocation, setUserLocation] = useState(null)
+  const [searchResults, setSearchResults] = useState([])
 
   useEffect(() => {
-    // Simulate API calls
-    const timer = setTimeout(() => {
+    // Initialize location and load initial data
+    initializeData()
+  }, [])
+
+  const initializeData = async () => {
+    setLoading(true)
+    try {
+      // Get user's current location
+      const location = await googleMapsService.getCurrentLocation()
+      setUserLocation(location)
+
+      // Load initial mock data
       setProviders(mockProviders)
       setFacilities(mockFacilities)
-      setPrograms(mockPrograms)
       setAppointments([
         {
           appointmentId: '1',
@@ -136,28 +152,141 @@ export function DataProvider({ children }) {
           provider: mockProviders[0]
         }
       ])
+
+      // Load health programs for the user's location
+      const healthPrograms = await openFDAService.getHealthPrograms('San Francisco, CA')
+      setPrograms([...mockPrograms, ...healthPrograms])
+    } catch (error) {
+      console.error('Error initializing data:', error)
+      // Fallback to mock data
+      setProviders(mockProviders)
+      setFacilities(mockFacilities)
+      setPrograms(mockPrograms)
+    } finally {
       setLoading(false)
-    }, 800)
-
-    return () => clearTimeout(timer)
-  }, [])
-
-  const bookAppointment = (providerId, dateTime) => {
-    const provider = providers.find(p => p.providerId === providerId)
-    const newAppointment = {
-      appointmentId: Date.now().toString(),
-      userId: '1',
-      providerId,
-      dateTime,
-      status: 'confirmed',
-      provider
     }
-    setAppointments(prev => [...prev, newAppointment])
-    return newAppointment
   }
 
-  const cancelAppointment = (appointmentId) => {
-    setAppointments(prev => prev.filter(apt => apt.appointmentId !== appointmentId))
+  const searchNearbyProviders = async (query, type = 'hospital', radius = 5000) => {
+    if (!userLocation) return []
+
+    setLoading(true)
+    try {
+      const results = await googleMapsService.searchNearbyHealthcare(
+        userLocation.lat,
+        userLocation.lng,
+        type,
+        radius
+      )
+      setSearchResults(results)
+      return results
+    } catch (error) {
+      console.error('Error searching providers:', error)
+      return []
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const geocodeAddress = async (address) => {
+    try {
+      return await googleMapsService.geocodeAddress(address)
+    } catch (error) {
+      console.error('Error geocoding address:', error)
+      return null
+    }
+  }
+
+  const bookAppointment = async (appointmentData) => {
+    setLoading(true)
+    try {
+      const confirmation = await appointmentService.bookAppointment(appointmentData)
+      
+      // Add the new appointment to local state
+      const provider = providers.find(p => p.providerId === appointmentData.providerId)
+      const newAppointment = {
+        appointmentId: confirmation.appointmentId,
+        userId: appointmentData.userId,
+        providerId: appointmentData.providerId,
+        dateTime: appointmentData.dateTime,
+        status: 'confirmed',
+        type: appointmentData.type || 'consultation',
+        confirmationNumber: confirmation.confirmationNumber,
+        provider
+      }
+      
+      setAppointments(prev => [...prev, newAppointment])
+      return confirmation
+    } catch (error) {
+      console.error('Error booking appointment:', error)
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const cancelAppointment = async (appointmentId) => {
+    setLoading(true)
+    try {
+      const confirmation = await appointmentService.cancelAppointment(appointmentId)
+      
+      // Update local state
+      setAppointments(prev => 
+        prev.map(apt => 
+          apt.appointmentId === appointmentId 
+            ? { ...apt, status: 'cancelled' }
+            : apt
+        )
+      )
+      
+      return confirmation
+    } catch (error) {
+      console.error('Error cancelling appointment:', error)
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getAvailableSlots = async (providerId, date) => {
+    try {
+      return await appointmentService.getAvailableSlots(providerId, date)
+    } catch (error) {
+      console.error('Error fetching available slots:', error)
+      return []
+    }
+  }
+
+  const verifyInsurance = async (providerId, insuranceInfo) => {
+    try {
+      return await appointmentService.verifyInsurance(providerId, insuranceInfo)
+    } catch (error) {
+      console.error('Error verifying insurance:', error)
+      return { verified: false, message: 'Unable to verify insurance at this time' }
+    }
+  }
+
+  const searchDrugs = async (query) => {
+    try {
+      return await openFDAService.searchDrugs(query)
+    } catch (error) {
+      console.error('Error searching drugs:', error)
+      return []
+    }
+  }
+
+  const searchRecalls = async (query, type = 'device') => {
+    try {
+      if (type === 'device') {
+        return await openFDAService.searchDeviceRecalls(query)
+      } else if (type === 'food') {
+        return await openFDAService.searchFoodRecalls(query)
+      }
+      return []
+    } catch (error) {
+      console.error('Error searching recalls:', error)
+      return []
+    }
   }
 
   const searchProviders = (query, filters = {}) => {
@@ -188,14 +317,32 @@ export function DataProvider({ children }) {
   }
 
   const value = {
+    // Data
     providers,
     facilities,
     programs,
     appointments,
+    userLocation,
+    searchResults,
     loading,
+    
+    // Setters
+    setProviders,
+    setFacilities,
+    setPrograms,
+    setAppointments,
+    
+    // Methods
+    searchNearbyProviders,
+    geocodeAddress,
     bookAppointment,
     cancelAppointment,
-    searchProviders
+    getAvailableSlots,
+    verifyInsurance,
+    searchDrugs,
+    searchRecalls,
+    searchProviders,
+    initializeData
   }
 
   return (
