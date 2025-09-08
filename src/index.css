@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+@layer base {
+  * {
+    @apply border-gray-200;
+  }
+  
+  body {
+    @apply bg-bg text-text-primary font-sans;
+  }
+}
+
+@layer components {
+  .display {
+    @apply text-5xl font-extrabold;
+  }
+  
+  .heading-1 {
+    @apply text-3xl font-bold;
+  }
+  
+  .heading-2 {
+    @apply text-2xl font-semibold;
+  }
+  
+  .body-large {
+    @apply text-lg font-normal;
+  }
+  
+  .body {
+    @apply text-base font-normal;
+  }
+  
+  .caption {
+    @apply text-sm font-normal;
+  }
+  
+  .container {
+    @apply max-w-6xl w-full mx-auto px-6;
+  }
+}
